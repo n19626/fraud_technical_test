@@ -6,7 +6,7 @@ import pandas as pd
 @st.cache_data  # caches after first load; speeds up reruns
 def load_data():
     return pd.read_csv(
-        "data/fraud_dataset_full.csv",
+        "data/fraud_dataset_full_final.csv",
         parse_dates=["transaction_date_time"]      # keep timestamp column as datetime
     )
 
