@@ -22,11 +22,12 @@ st.set_page_config(page_title="Fraud Trend Analysis",
 st.title("🕵️‍♂️ Fraud Trend Analysis – 60-Minute Challenge")
 st.markdown(
 """
-**Your tasks (60 min)**  
+**Your tasks (45 min)**  
 
-1. Explore the data with the filters and charts below.  
+1. Explore the data with the filters and charts below (Raw data can be exported and other offline tools can be used )   
 2. Identify **3-5 emerging fraud trends**.  
-3. Recommend **3-5 strategic controls**.  
+3. Recommend **3-5 strategic controls**. 
+4. Discuss findings (15 mins)
 """
 )
 
