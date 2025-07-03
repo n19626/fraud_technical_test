@@ -14,7 +14,7 @@ df = load_data()
 
 # ---------------- 2. Page setup ------------------------------
 st.set_page_config(
-    page_title="Fraud Technical Asessment"
+    page_title="Fraud Technical Asessment",
     page_icon="🕵️",
     layout="wide",
 )
