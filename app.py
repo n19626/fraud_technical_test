@@ -1,72 +1,69 @@
-# app.py – Fraud Trend Analysis Challenge
+# app.py  – Fraud Trend Analysis Challenge  (feedback version)
 import streamlit as st
 import pandas as pd
 
-# ---------------- 1. Load data ------------------------------------------
+# ---------- 1. Load data -------------------------------------------------
 @st.cache_data
 def load_data():
-    return pd.read_csv(
-        "data/fraud_dataset_full_final.csv",     # 👈 change if your file name differs
+    df = pd.read_csv(
+        "data/fraud_dataset_full_final.csv",            # ← adjust name if needed
         parse_dates=["transaction_date_time"]
     )
+    # drop VELOCITY fraud rows entirely
+    df = df[df["fraud_type"].fillna("").str.upper() != "VELOCITY"]
+    return df
 
 df = load_data()
 
-# ---------------- 2. Page setup -----------------------------------------
-st.set_page_config(page_title="Fraud Trend Challenge", page_icon="🕵️", layout="wide")
+# ---------- 2. Page setup ------------------------------------------------
+st.set_page_config(
+    page_title="Fraud Trend Analysis Challenge",
+    page_icon="🕵️",
+    layout="wide",
+)
 st.title("🕵️‍♂️ Fraud Trend Analysis – 60-Minute Challenge")
-
 st.markdown(
 """
 **Your tasks (60 min)**  
 
-1. Use the filters and charts to explore the data.  
+1. Explore the data with the filters and charts below.  
 2. Identify **2–3 emerging fraud trends**.  
-3. Recommend **2–3 strategic control actions**.  
-4. Enter insights in the box below *or* send separately (≤ 300 words).
+3. Recommend **2–3 strategic controls** (submit separately).  
 """
 )
 
-# ---------------- 3. Sidebar filters ------------------------------------
+# ---------- 3. Sidebar filters ------------------------------------------
 st.sidebar.header("🔍 Quick filters")
 
 # Date range
-dmin, dmax = df["transaction_date_time"].dt.date.min(), df["transaction_date_time"].dt.date.max()
-d_from, d_to = st.sidebar.date_input("Date range", (dmin, dmax))
-
-# MCC
-mcc_sel = st.sidebar.multiselect(
-    "Merchant category code (MCC)",
-    sorted(df["merchant_category_code"].dropna().unique())
+date_min = df["transaction_date_time"].dt.date.min()
+date_max = df["transaction_date_time"].dt.date.max()
+start_date, end_date = st.sidebar.date_input(
+    "Date range", (date_min, date_max)
 )
 
-# POS entry mode
-pos_sel = st.sidebar.multiselect(
-    "POS entry mode",
-    sorted(df["pos_entry_desc"].dropna().unique())
-)
+# Merchant Category Code
+mcc_opts = sorted(df["merchant_category_code"].dropna().unique())
+mcc_sel  = st.sidebar.multiselect("Merchant category code (MCC)", mcc_opts)
 
-# Merchant name
-mn_sel = st.sidebar.multiselect(
-    "Merchant names",
-    sorted(df["merchant_name"].dropna().unique())
-)
+# POS Entry Mode
+pos_opts = sorted(df["pos_entry_desc"].dropna().unique())
+pos_sel  = st.sidebar.multiselect("POS entry mode", pos_opts)
 
-# Fraud type
-ft_sel = st.sidebar.multiselect(
-    "Fraud types",
-    sorted([ft for ft in df["fraud_type"].dropna().unique() if ft])
-)
+# Merchant Name
+mn_opts  = sorted(df["merchant_name"].dropna().unique())
+mn_sel   = st.sidebar.multiselect("Merchant names", mn_opts)
 
-# Country
-cty_sel = st.sidebar.multiselect(
-    "Merchant country codes",
-    sorted(df["merchant_country_code"].dropna().unique())
-)
+# Fraud Type  (VELOCITY already removed)
+ft_opts  = sorted([ft for ft in df["fraud_type"].dropna().unique() if ft])
+ft_sel   = st.sidebar.multiselect("Fraud types", ft_opts)
 
-# Apply mask
+# Merchant Country
+cty_opts = sorted(df["merchant_country_code"].dropna().unique())
+cty_sel  = st.sidebar.multiselect("Merchant country codes", cty_opts)
+
 mask = (
-    df["transaction_date_time"].dt.date.between(d_from, d_to)
+    df["transaction_date_time"].dt.date.between(start_date, end_date)
     & (df["merchant_category_code"].isin(mcc_sel) if mcc_sel else True)
     & (df["pos_entry_desc"].isin(pos_sel)         if pos_sel else True)
     & (df["merchant_name"].isin(mn_sel)           if mn_sel else True)
@@ -76,87 +73,36 @@ mask = (
 view = df[mask]
 st.write(f"**{len(view):,} transactions** match your filters.")
 
-fraud_view = view[view["fraud"] == 1]  # only fraud rows for loss charts
+# ---------- 4. Daily & monthly cumulative fraud loss table --------------
+fraud_view = view[view["fraud"] == 1].copy()
+fraud_view["date"]  = fraud_view["transaction_date_time"].dt.date
+fraud_view["month"] = fraud_view["transaction_date_time"].dt.to_period("M").astype(str)
 
-# ---------------- 4. KPI / quick charts ---------------------------------
-col1, col2 = st.columns(2)
+daily = (fraud_view
+         .groupby(["date", "month"])
+         .agg(fraud_volume=("fraud", "count"),
+              fraud_value=("transaction_amount", "sum"))
+         .reset_index())
 
-with col1:
-    st.subheader("📈 Daily fraud rate (%)")
-    daily = (
-        view.groupby(view["transaction_date_time"].dt.date)["fraud"]
-        .mean()
-        .mul(100)
-        .rename("fraud_rate_%")
-    )
-    st.line_chart(daily)
+# cumulative by month
+daily["month_cum_volume"] = daily.groupby("month")["fraud_volume"].cumsum()
+daily["month_cum_value"]  = daily.groupby("month")["fraud_value"].cumsum()
 
-with col2:
-    st.subheader("🗺️ Fraud rate by country (%)")
-    by_country = (
-        view.groupby("merchant_country_code")["fraud"]
-        .mean()
-        .mul(100)
-        .sort_values(ascending=False)
-        .head(15)
-    )
-    st.bar_chart(by_country)
+st.subheader("🗓️ Daily fraud losses with monthly cumulative")
+st.dataframe(daily, height=300)
 
-# ---------------- 5. NEW loss / volume charts ---------------------------
-st.markdown("---")
-st.header("📊 Fraud-loss dashboards")
-
-# 5-A Monthly fraud losses (amount & volume)
-monthly = (
+# ---------- 5. Line chart – fraud losses by POS entry (monthly) ----------
+fraud_month_pos = (
     fraud_view
-    .set_index("transaction_date_time")
-    .groupby(pd.Grouper(freq="M"))
-    .agg(loss_amount_gbp=("transaction_amount", "sum"),
-         loss_volume=("fraud", "count"))
-)
-st.subheader("Monthly fraud losses – GBP")
-st.bar_chart(monthly["loss_amount_gbp"])
-st.subheader("Monthly fraud volume – count")
-st.bar_chart(monthly["loss_volume"])
-
-# 5-B POS entry-mode fraud losses
-st.subheader("Fraud losses by POS entry mode (GBP)")
-pos_losses = (
-    fraud_view
-    .groupby("pos_entry_desc")["transaction_amount"]
-    .sum()
-    .sort_values(ascending=False)
-)
-st.bar_chart(pos_losses)
-
-# 5-C Secure vs Unsecure fraud losses
-st.subheader("Fraud losses – Secure vs Unsecure (GBP)")
-sec_losses = (
-    fraud_view
-    .groupby("secure_indicator")["transaction_amount"]
-    .sum()
-    .rename_axis("secure_indicator")
-)
-st.bar_chart(sec_losses)
-
-# 5-D Monthly fraud losses by fraud type (stacked)
-st.subheader("Monthly fraud losses by fraud type (GBP)")
-by_ft = (
-    fraud_view
-    .set_index("transaction_date_time")
-    .groupby([pd.Grouper(freq="M"), "fraud_type"])["transaction_amount"]
+    .groupby([fraud_view["transaction_date_time"].dt.to_period("M").astype(str),
+              "pos_entry_desc"])["transaction_amount"]
     .sum()
     .unstack(fill_value=0)
 )
-st.area_chart(by_ft)
 
-# ---------------- 6. Raw-data preview -----------------------------------
-st.markdown("---")
+st.subheader("📊 Monthly fraud value by POS entry mode (£)")
+st.line_chart(fraud_month_pos)
+
+# ---------- 6. Raw-data preview -----------------------------------------
 st.subheader("Raw data (first 2 000 rows)")
 st.dataframe(view.head(2000), height=300)
-
-# ---------------- 7. Candidate input ------------------------------------
-st.text_area(
-    "✍️ Paste your key insights & recommended controls here (optional)",
-    height=150,
-)
