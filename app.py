@@ -25,8 +25,8 @@ st.markdown(
 **Your tasks (60 min)**  
 
 1. Explore the data with the filters and charts below.  
-2. Identify **2–3 emerging fraud trends**.  
-3. Recommend **2–3 strategic controls** (submit separately).  
+2. Identify **3-5 emerging fraud trends**.  
+3. Recommend **3-5 strategic controls**.  
 """
 )
 
@@ -115,7 +115,7 @@ fraud_month_pos = (
 st.line_chart(fraud_month_pos)
 
 # 5d. Global heat-map of fraud volume -----------------------------------
-st.subheader("🌍 Global fraud hotspots (volume-weighted heat map)")
+st.subheader("🌍 Global fraud hotspots")
 
 # rough lat/lon centroids for ISO-2 country codes used in the dataset
 country_coords = {
