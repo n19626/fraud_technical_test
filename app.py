@@ -1,12 +1,13 @@
-# app.py  – Fraud Trend Analysis Challenge (rev 2)
+# app.py  – Fraud Trend Analysis Challenge (global-heatmap version)
 import streamlit as st
 import pandas as pd
+import pydeck as pdk
 
 # ---------- 1. Load data (drop VELOCITY) -------------------------------
 @st.cache_data
 def load_data():
     df = pd.read_csv(
-        "data/fraud_dataset_full_final.csv",      # <-- update if file name differs
+        "data/fraud_dataset_full_final.csv",            # <-- adjust if filename differs
         parse_dates=["transaction_date_time"]
     )
     df = df[df["fraud_type"].fillna("").str.upper() != "VELOCITY"]
@@ -23,7 +24,7 @@ st.markdown(
 """
 **Your tasks (60 min)**  
 
-1. Explore the data using the filters and charts below.  
+1. Explore the data with the filters and charts below.  
 2. Identify **2–3 emerging fraud trends**.  
 3. Recommend **2–3 strategic controls** (submit separately).  
 """
@@ -36,11 +37,11 @@ date_min = df["transaction_date_time"].dt.date.min()
 date_max = df["transaction_date_time"].dt.date.max()
 start_date, end_date = st.sidebar.date_input("Date range", (date_min, date_max))
 
-mcc_opts   = sorted(df["merchant_category_code"].dropna().unique())
-pos_opts   = sorted(df["pos_entry_desc"].dropna().unique())
-mn_opts    = sorted(df["merchant_name"].dropna().unique())
-ft_opts    = sorted([ft for ft in df["fraud_type"].dropna().unique() if ft])  # VELOCITY gone
-cty_opts   = sorted(df["merchant_country_code"].dropna().unique())
+mcc_opts = sorted(df["merchant_category_code"].dropna().unique())
+pos_opts = sorted(df["pos_entry_desc"].dropna().unique())
+mn_opts  = sorted(df["merchant_name"].dropna().unique())
+ft_opts  = sorted([ft for ft in df["fraud_type"].dropna().unique() if ft])
+cty_opts = sorted(df["merchant_country_code"].dropna().unique())
 
 mcc_sel = st.sidebar.multiselect("Merchant category code (MCC)", mcc_opts)
 pos_sel = st.sidebar.multiselect("POS entry mode", pos_opts)
@@ -113,17 +114,53 @@ fraud_month_pos = (
 )
 st.line_chart(fraud_month_pos)
 
-# 5d. UK hotspots (top 10 cities by fraud volume)
-uk_fraud = fraud_view[fraud_view["merchant_country_code"] == "GB"]
-city_top10 = (
-    uk_fraud.groupby("merchant_city_name")["fraud"]
-    .count()
-    .sort_values(ascending=False)
-    .head(10)
-)
-st.subheader("🇬🇧 UK fraud hotspots – top 10 cities (volume)")
-st.bar_chart(city_top10)
+# 5d. Global heat-map of fraud volume -----------------------------------
+st.subheader("🌍 Global fraud hotspots (volume-weighted heat map)")
 
-# ---------- 6. Raw-data preview ----------------------------------------
+# rough lat/lon centroids for ISO-2 country codes used in the dataset
+country_coords = {
+    "GB": (54.0,  -2.0),  "US": (39.5, -98.35), "CA": (56.1, -106.3),
+    "FR": (46.2,   2.2),  "DE": (51.1,  10.4),  "NL": (52.1,   5.3),
+    "IE": (53.1,  -8.2),  "ES": (40.5,  -3.7),  "IT": (42.8,  12.5),
+    "AU": (-25.3, 133.8), "NZ": (-41.0, 174.0), "IN": (22.6,  78.9),
+    "CN": (35.9, 104.2),  "JP": (36.2, 138.2),  "HK": (22.3, 114.2),
+    "SG": ( 1.3, 103.8),  "KR": (36.5, 127.9),  "MY": ( 4.2, 101.9),
+    "TH": (15.9, 100.9),  "PH": (12.9, 122.9), "BR": (-14.2, -51.9),
+    "MX": (23.6, -102.6), "AR": (-38.4, -63.6), "ZA": (-28.5,  24.7),
+    "KE": ( -0.0,  37.9), "NG": ( 9.1,   8.7), "GH": ( 7.9,  -1.0),
+    "EG": (26.8,  29.8),  "RU": (61.5, 105.3), "UA": (48.4,  31.1),
+    "IR": (32.5,  53.7),  "PK": (30.4,  69.3), "TR": (38.9,  35.2),
+    "AE": (24.2,  54.7),  "SA": (24.1,  45.0), "QA": (25.3,  51.2),
+    "CO": ( 4.6, -74.1),  "CL": (-30.0, -71.0), "PE": (-9.2, -75.0),
+    "ID": ( -2.3, 118.0)
+}
+
+# aggregate fraud volume per country
+country_vol = (
+    fraud_view.groupby("merchant_country_code")["fraud"]
+    .count()
+    .reset_index(name="fraud_volume")
+)
+# attach lat/lon
+country_vol["lat"] = country_vol["merchant_country_code"].map(lambda c: country_coords.get(c, (None, None))[0])
+country_vol["lon"] = country_vol["merchant_country_code"].map(lambda c: country_coords.get(c, (None, None))[1])
+country_vol = country_vol.dropna(subset=["lat","lon"])
+
+# create heat-map layer
+layer = pdk.Layer(
+    "HeatmapLayer",
+    data=country_vol,
+    get_position="[lon, lat]",
+    get_weight="fraud_volume",
+    radiusPixels=60,
+    aggregation=pdk.types.String("SUM"),
+)
+
+view_state = pdk.ViewState(latitude=15, longitude=0, zoom=1)
+deck = pdk.Deck(layers=[layer], initial_view_state=view_state,
+                tooltip={"text": "{merchant_country_code}: {fraud_volume}"})
+st.pydeck_chart(deck)
+
+# ---------- 6. Raw-data preview ---------------------------------------
 st.subheader("Raw data (first 2 000 rows)")
 st.dataframe(view.head(2000), height=300)
