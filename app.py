@@ -163,5 +163,5 @@ deck = pdk.Deck(layers=[layer], initial_view_state=view_state,
 st.pydeck_chart(deck)
 
 # ---------- 6. Raw-data preview ---------------------------------------
-st.subheader("Raw data (10 Transactions)")
+st.subheader("Raw data (10k Transactions)")
 st.dataframe(view.head(10000), height=300)
