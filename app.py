@@ -3,14 +3,20 @@ import streamlit as st
 import pandas as pd
 import pydeck as pdk
 
-# ---------- 1. Load data (drop VELOCITY) -------------------------------
+# ---------- 1. Load data (drop VELOCITY + unwanted columns) ----------------
 @st.cache_data
 def load_data():
-    df = pd.read_csv(
-        "data/fraud_dataset_full_final.csv",            # <-- adjust if filename differs
-        parse_dates=["transaction_date_time"]
+    df = (
+        pd.read_csv(
+            "data/fraud_dataset_full_final.csv",        # <-- adjust if filename differs
+            parse_dates=["transaction_date_time"]
+        )
+        # exclude VELOCITY fraud-type rows
+        .query("fraud_type.str.upper() != 'VELOCITY'", engine="python")
+        # drop the unneeded transaction-type columns
+        .drop(columns=["transaction_type_code", "transaction_type_desc"],
+              errors="ignore")
     )
-    df = df[df["fraud_type"].fillna("").str.upper() != "VELOCITY"]
     return df
 
 df = load_data()
@@ -24,10 +30,10 @@ st.markdown(
 """
 **Your tasks (45 min)**  
 
-1. Explore the data with the filters and charts below (Raw data can be exported and other offline tools can be used )   
+1. Explore the data with the filters and charts below (Raw data can be exported and other offline tools can be used)  
 2. Identify **3-5 emerging fraud trends**.  
-3. Recommend **3-5 strategic controls**. 
-4. Discuss findings (15 mins)
+3. Recommend **3-5 strategic controls**.  
+4. Discuss findings (15 min)
 """
 )
 
@@ -145,7 +151,7 @@ country_vol = (
 # attach lat/lon
 country_vol["lat"] = country_vol["merchant_country_code"].map(lambda c: country_coords.get(c, (None, None))[0])
 country_vol["lon"] = country_vol["merchant_country_code"].map(lambda c: country_coords.get(c, (None, None))[1])
-country_vol = country_vol.dropna(subset=["lat","lon"])
+country_vol = country_vol.dropna(subset=["lat", "lon"])
 
 # create heat-map layer
 layer = pdk.Layer(
@@ -163,5 +169,5 @@ deck = pdk.Deck(layers=[layer], initial_view_state=view_state,
 st.pydeck_chart(deck)
 
 # ---------- 6. Raw-data preview ---------------------------------------
-st.subheader("Raw data (10k Transactions)")
+st.subheader("Raw data (10k transactions)")
 st.dataframe(view.head(10000), height=300)
